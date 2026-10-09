@@ -109,4 +109,4 @@ LangGraph · ChatGroq (openai/gpt-oss-20b) · Playwright · FastAPI + SQLite · 
 ## Submission
 
 - Demo video: (link)
-- LangSmith trace example: (https://smith.langchain.com/public/03218293-ebab-4026-86f5-7f51b43aa3a3/r/01a12128-c839-7d53-8bb7-8d2b159c05df?start_time=2026-10-09T14%3A54%3A43.257431Z)
+- LangSmith Trace Example: [View Trace](https://smith.langchain.com/public/03218293-ebab-4026-86f5-7f51b43aa3a3/r/01a12128-c839-7d53-8bb7-8d2b159c05df?start_time=2026-10-09T14%3A54%3A43.257431Z)
