@@ -1,0 +1,8 @@
+INVOICE
+Vendor: demo
+Invoice Number: INV-demo
+Date Issued: 2026-09-15
+Due Date: 2026-10-15
+Amount: 450000.00
+PO Number: PO-1002
+Description: Consulting services for September

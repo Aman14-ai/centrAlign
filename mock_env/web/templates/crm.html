@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>CRM — Vendors</h1>
+
+<form method="get" action="/app/crm">
+    <label>Search
+        <input id="search-input" name="q" value="{{ q }}">
+    </label>
+    <button id="search-btn" type="submit">Search</button>
+</form>
+
+<ul id="vendor-list">
+{% for v in vendors %}
+    <li class="vendor-row" data-vendor-id="{{ v.id }}">
+        <strong>{{ v.name }}</strong> ({{ v.id }}) — aliases: {{ v.aliases }}
+    </li>
+{% endfor %}
+</ul>
+{% endblock %}

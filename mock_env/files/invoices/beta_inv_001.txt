@@ -1,0 +1,8 @@
+INVOICE
+Vendor: Beta LLC
+Invoice Number: INV-003
+Date Issued: 2026-09-20
+Due Date: 2026-10-20
+Amount: 12000.00
+PO Number: PO-1002
+Description: Software license

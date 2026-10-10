@@ -1,0 +1,15 @@
+langgraph
+langchain
+langchain-groq
+langchain-community
+langsmith
+python-dotenv
+pydantic
+ipykernel
+fastapi
+uvicorn[standard]
+sqlalchemy
+Jinja2
+python-multipart
+playwright
+chromadb

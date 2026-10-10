@@ -1,0 +1,8 @@
+INVOICE
+Vendor: Acme Corporation
+Invoice Number: INV-002
+Date Issued: 2026-09-28
+Due Date:
+Amount: 45000.00
+PO Number: PO-1001
+Description: Consulting services for October

@@ -1,0 +1,5 @@
+PURCHASE ORDER
+PO Number: PO-1001
+Vendor: Acme Corp
+Amount: 45000.00
+Status: open
