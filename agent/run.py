@@ -58,17 +58,27 @@ def _print_interrupt(payload: dict) -> None:
         print(f"Options: {options}")
 
 
+CANCEL_ALIASES = {"cancel", "stop", "abort", "quit", "exit", "no", "n"}
+
+
 def _prompt_decision(payload: dict) -> dict:
     _print_interrupt(payload)
     options = payload.get("options") or payload.get("payload", {}).get("options", [])
-    if options:
-        choice = input("Your choice: ").strip()
-        if "approve" in options and "reject" in options:
-            return {"choice": "approve" if choice.lower() in ("a", "approve", "y", "yes") else "reject"}
-        return {"choice": choice}
-    answer = input("Your answer: ").strip()
-    return {"choice": answer}
+    is_approval = "approve" in options and "reject" in options
 
+    raw = input("Your choice: ").strip()
+    lowered = raw.lower()
+
+    if is_approval:
+        if lowered in ("a", "approve", "y", "yes"):
+            return {"choice": "approve"}
+        return {"choice": "reject"}
+
+    # Clarification prompt — pass through, but normalize cancel tokens
+    if lowered in CANCEL_ALIASES:
+        return {"choice": "cancel"}
+
+    return {"choice": raw}
 
 def _print_report(result: dict) -> None:
     print("\n" + "=" * 60)

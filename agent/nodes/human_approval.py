@@ -1,10 +1,26 @@
-from agent.state import AgentState
-from agent.policies.risk import compute_risk
-from langgraph.types import interrupt
 from datetime import datetime, timezone
 
+from langgraph.types import interrupt
 
-def human_approval_node(state:AgentState):
+from agent.state import AgentState
+from agent.policies.risk import compute_risk
+
+
+CANCEL_TOKENS = {
+    "no", "n", "cancel", "stop", "abort", "quit", "exit",
+    "don't", "dont", "not", "nah", "nope", "reject", "deny", "refuse",
+}
+
+
+def _is_reject(decision) -> bool:
+    if isinstance(decision, dict):
+        choice = (decision.get("choice") or "").strip().lower()
+    else:
+        choice = str(decision or "").strip().lower()
+    return choice in CANCEL_TOKENS
+
+
+def human_approval_node(state: AgentState) -> dict:
     action = state.get("next_action") or {}
     risk = compute_risk(state)
 
@@ -20,8 +36,9 @@ def human_approval_node(state:AgentState):
         "options": ["approve", "reject"],
     }
 
-    decision=interrupt(payload)
-
+    # --- PAUSE ---
+    decision = interrupt(payload)
+    # --- RESUME ---
 
     approvals = list(state.get("approvals", []))
     approvals.append({
@@ -32,15 +49,16 @@ def human_approval_node(state:AgentState):
         "decision": decision,
     })
 
-    # if rejected stop the graph cleanly
-    if isinstance(decision, dict) and decision.get("choice") == "reject":
+    # --- REJECT / CANCEL ---
+    if _is_reject(decision):
         return {
             "approvals": approvals,
-            "status": "failed",
+            "next_action": {"tool": "DONE", "args": {}, "reason": "user rejected"},
             "pending_question": None,
+            "status": "failed",
         }
 
-    # Approved: continue with the same next_action
+    # --- APPROVED ---
     return {
         "approvals": approvals,
         "pending_question": None,

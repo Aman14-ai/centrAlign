@@ -43,6 +43,9 @@ def route_after_observer(state: AgentState) -> str:
     return "continue"
 
 def route_before_executor(state: AgentState) -> str:
+
+    if state.get("status") == "failed":
+        return "force_done"
     action = state.get("next_action") or {}
 
     if action.get("tool") == "ASK_USER":

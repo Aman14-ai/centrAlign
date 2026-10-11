@@ -10,5 +10,7 @@ def intake_node(state:AgentState):
 
     Return only the goal sentence. No explanation, no quotes.
     """
+    
     response=llm.invoke(prompt)
+    print("\n[INTAKE]\n",response.content.strip())
     return {"goal":response.content.strip()}

@@ -15,44 +15,42 @@ class Observation(TypedDict):
 
 class AgentState(TypedDict):
 
-    thread_id: str
-    final_report: dict | None
-    # User input
+    # identity and input
     task: str
     goal: str
+    thread_id: str
+    max_steps: int
 
-    # Loop control
+    # Current step (short term memory)
     next_action: Action | None
     last_observation: Observation | None
-    history: list[dict]
+    step_count: int
 
-    # World model (serialized via WorldModel.model_dump())
+    # long term memory its like knowledge accumulator
     world_model: dict
+    history: list[dict]
+    evidence:list[dict]
 
-    # failures and recoveries
+    # reliability the guard system
     failures: list[dict]     # classified failure records
     recoveries: list[dict]   # what we tried to recover
-
-    # verification
+    failed_actions: list[str]        # signatures of (tool, args) that failed
+    asked_questions: list[str]       # signatures of questions already asked
+    pending_answer: dict | None      # most recent user answer, unprocessed
+    
+    # verification and rollbacks
     verification:dict|None  # {passed, expected, actual, evidence, reason}
     rollback:dict|None
-    evidence:list[dict]
 
     # Loop counters and status
     recovery_attempts: int
-    step_count: int
-    max_steps: int
-    status: Literal["running", "done", "failed", "waiting_approval"]
 
     # HITL (Phase 7 uses these; harmless empty lists for now)
     approvals: list[dict]        # {question, decision, timestamp, node}
     pending_question: dict | None  # set when we interrupt
     risk_score: float            # 0.0 – 1.0, set by risk assessor
 
-    # Reliability guard
-    failed_actions: list[str]        # signatures of (tool, args) that failed
-    asked_questions: list[str]       # signatures of questions already asked
-    pending_answer: dict | None      # most recent user answer, unprocessed
-    
     # Output
     summary: str
+    final_report: dict | None
+    status: Literal["running", "done", "failed", "waiting_approval"]

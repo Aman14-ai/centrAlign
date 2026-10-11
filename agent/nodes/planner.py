@@ -26,6 +26,7 @@ Recent history:
 Decide the SINGLE NEXT action to move toward the goal.
 
 Rules:
+- If its normal chat acts like normal chatbots.
 - Choose exactly one tool and its arguments.
 - Do NOT call functions. Just return a JSON object with fields: tool, args, reason.
 - If the goal is achieved, respond with: {{"tool": "DONE", "args": {{}}, "reason": "goal achieved"}}

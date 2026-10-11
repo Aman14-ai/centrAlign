@@ -10,10 +10,12 @@ def executor_node(state: AgentState) -> dict:
 
     # DONE handling (unchanged)
     if tool_name == "DONE":
+        print("[EXECUTOR] DONE")
         return {"last_observation": {"success": True, "result": {"done": True}, "error": None}}
 
     # ---- GUARD: block previously failed actions ----
     if is_blocked_action(state, tool_name, args):
+        print(f"[EXECUTOR] blocked action: {tool_name} already failed with these args")
         return {
             "last_observation": {
                 "success": False,
@@ -30,14 +32,18 @@ def executor_node(state: AgentState) -> dict:
     # ---- Run the tool ----
     try:
         result = TOOLS[tool_name](**args)
+        print("\n[EXECUTOR RESULT]\n", result, "\n")
     except TypeError as e:
         result = {"success": False, "result": {}, "error": f"Bad arguments: {e}"}
+        print("\n[EXECUTOR ERROR]\n", result, "\n")
     except Exception as e:
+        print("\n[EXECUTOR ERROR]\n", result, "\n")
         result = {"success": False, "result": {}, "error": f"Tool crashed: {e}"}
 
     # ---- GUARD: record failure ----
     if not result.get("success"):
         failed = record_failed_action(state, tool_name, args)
+        print(f"[EXECUTOR] failed action: {tool_name} with these args")
         return {"last_observation": result, "failed_actions": failed}
 
     return {"last_observation": result}
