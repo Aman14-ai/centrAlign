@@ -1,10 +1,8 @@
 # AI Worker
 
-An agent that takes a plain-English task ("read this invoice and enter it in the ERP") and tries to finish it on its own, using a browser, local files, and an API. I built it mostly to answer one question: what does it take to make an agent *reliable*, not just impressive in a demo?
+An autonomous agent that takes a plain-English task and gets it done using a browser, files, and REST APIs. It remembers what it finds, recovers from failures, checks its own writes, and stops to ask a human when something is risky or unclear.
 
-So the interesting parts aren't the happy path. They're what happens when a file is missing, a selector breaks, the task is ambiguous, or the agent is about to do something expensive.
-
-```bash
+```
 $ python -m agent.run "Fetch vendor V001 from the API and tell me their email"
 
 TASK: Fetch vendor V001 from the API and tell me their email
@@ -14,85 +12,70 @@ STEPS:
   [1] api_get_vendor   -> got entity V001
   [2] DONE             -> ok
 
-WORLD MODEL:
-Vendors:
-  V001: Acme Corp (aliases: Acme Corporation, ACME) | email: ap@acme.com
-
-SUMMARY:
-  Fetched vendor V001 (Acme Corp). Email: ap@acme.com.
-
+SUMMARY: Fetched vendor V001 (Acme Corp). Email: ap@acme.com.
 STATUS: done
 ```
+
+It runs against a mock company (FastAPI + SQLite backend, HTML pages, and sample files), so nothing real is ever touched.
 
 ## How it works
 
 ![Workflow](./workflow.png)
 
-The agent is a ReAct-style loop built as a LangGraph state machine. Every run starts at `intake`, which turns the task into a one-line goal. From there it cycles: the **planner** picks one next action, the **executor** runs it, and the **observer** records what happened. A **router** then decides where to go next: keep planning, diagnose a failure, verify a write, or stop and ask the human.
+The agent is a ReAct loop built as a LangGraph state machine. Each step:
 
-| Node | What it does |
-|---|---|
-| `intake` | Turns the task into a clean one-line goal |
-| `planner` | Asks the LLM for the single next action |
-| `executor` | Runs the tool, catches every error, returns a uniform result |
-| `observer` | Updates the world model and appends to history |
-| `diagnoser` | Sorts failures into a fixed taxonomy |
-| `recovery` | Picks a fix, from memory first, then the LLM |
-| `verifier` | Reads back what was written and compares it to the intent |
-| `rollback` | Undoes a bad write with a compensating action |
-| `approve` | Pauses for human approval on risky actions |
-| `ask_user` | Pauses for clarification when the task is ambiguous |
-| `force_done` | Shuts down cleanly if a loop is detected |
-| `summarizer` | Writes the final report |
+1. **Planner** picks the next single action from the goal, world model, and last observation.
+2. **Executor** runs the tool. Every error is caught and returned in the same `{success, result, error}` shape.
+3. **Observer** updates the world model.
+4. **Router** decides whether to continue, diagnose a failure, verify a write, ask the user, or wrap up.
 
-### Tools
+Around that main loop sit two more:
 
-Every tool returns the same shape, `{success, result, error}`. That sounds boring, but it's what lets the observer, diagnoser and router handle any tool without special cases.
+- **Recovery:** on failure, the diagnoser classifies the error, then recovery looks for a past successful fix in memory before asking the LLM.
+- **Human-in-the-loop:** risky actions (amount ≥ 100,000, irreversible tools) or ambiguous input pause the graph for approval or clarification.
 
-- **Files:** `list_files`, `read_file`, `write_file`
-- **Browser (Playwright):** `browser_open`, `browser_fill`, `browser_click`, `browser_read`, `browser_screenshot`
-- **API (httpx):** `api_get`, `api_post`, `api_get_invoice`, `api_create_invoice`, `api_get_vendor`, `api_get_po`, `api_create_expense`, `api_get_expense`, `api_get_employee`, `api_send_email`
-- **Meta:** `remember`
+Writes are verified by reading the record back and comparing fields with `==`. If something doesn't match, the agent rolls back with a compensating action.
 
 ### Memory
 
-There are three separate memories because they live for different amounts of time.
+| What | Lifetime | Storage |
+|---|---|---|
+| World model (vendors, POs, invoices, files, facts) | One run | In state |
+| Recovery memory (strategies that worked) | All runs | SQLite + ChromaDB |
+| Checkpoints (for replay and resuming after a pause) | One run | SQLite |
 
-- **World model** (one run): typed knowledge about vendors, POs, invoices, files, facts and open uncertainties.
-- **Recovery memory** (all runs): fixes that worked before, stored in SQLite and ChromaDB.
-- **Checkpointer** (one run): state snapshots in SQLite, used for replay and for resuming after a human pause.
+### Tools
 
-### The mock company
+- **Files:** `list_files`, `read_file`, `write_file`
+- **Browser (Playwright):** open, fill, click, read, screenshot
+- **API (httpx):** vendors, POs, invoices, expenses, employees, email
+- **Meta:** `remember`
 
-The agent doesn't touch anything real. It works against a small fake company:
+## Setup
 
-- a FastAPI + SQLite backend (`mock_env/api/`)
-- HTML pages for the browser to drive (`mock_env/web/templates/`)
-- files to read and write (`mock_env/files/`)
-
-## Getting it running
-
-You'll need Python 3.10+ and a [Groq API key](https://console.groq.com). A [LangSmith](https://smith.langchain.com) key is optional, but I'd recommend it, because being able to see every LLM call makes debugging much less painful.
+You'll need Python 3.10+ and a [Groq API key](https://console.groq.com). A [LangSmith](https://smith.langchain.com) key is optional but useful for tracing.
 
 ```bash
 git clone <your-repo-url>
 cd ai-worker
 
 python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-Create a `.env` file in the project root:
+Create a `.env` file:
 
-```bash
-GROQ_API_KEY=your_groq_key_here
+```
+GROQ_API_KEY=your_groq_key
 LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=your_langsmith_key_here
+LANGCHAIN_API_KEY=your_langsmith_key
 LANGCHAIN_PROJECT=ai-worker
 ```
+
+The model is `openai/gpt-oss-20b`, served through Groq.
 
 Seed the mock database:
 
@@ -100,7 +83,7 @@ Seed the mock database:
 python -m mock_env.api.seed
 ```
 
-### Run it
+## Running it
 
 Start the mock company server in one terminal:
 
@@ -108,122 +91,99 @@ Start the mock company server in one terminal:
 uvicorn mock_env.api.main:app --port 8000
 ```
 
-Quick check that it's up:
+Check it's up with `curl http://localhost:8000/api/health`. You can also poke around at `/docs` (API), `/app/erp` (invoice form), and `/app/crm` (vendor list).
 
-```bash
-curl http://localhost:8000/api/health
-# {"status":"ok"}
-```
-
-The API docs are at http://localhost:8000/docs and the ERP form is at http://localhost:8000/app/erp.
-
-Then, in a second terminal, give the agent a task:
+Then run a task from a second terminal:
 
 ```bash
 python -m agent.run "your task here"
 ```
 
-## Things to try
+If the agent pauses, type `approve`, `reject`, or your answer. Final reports are saved to `reports/<thread_id>.json`.
 
-Each of these exercises a different part of the system.
+### Try these
 
 ```bash
 # Simple lookup
 python -m agent.run "Fetch vendor V001 from the API and tell me their email"
 
-# Multi-step, uses the world model
+# Multi-step, builds up memory
 python -m agent.run "Fetch vendor V001, then fetch purchase order PO-1001, and tell me which vendor the PO belongs to"
 
 # Browser automation + verification
 python -m agent.run "Read invoices/acme_inv_001.txt, open /app/erp, fill the form with the invoice data, and click submit"
 
-# Failure recovery (the file doesn't exist)
+# Failure and recovery
 python -m agent.run "Read invoices/does_not_exist.txt and tell me what it contains"
 
-# Human approval (high-value action)
+# Needs approval (high value)
 python -m agent.run "Use the API to create invoice INV-900 for V001 with amount 250000"
 
-# Clarification (ambiguous input)
+# Needs clarification (ambiguous)
 python -m agent.run "Find the Acme vendor's email"
 ```
 
-## Design decisions
-
-A few choices that shaped the project, and why I made them.
-
-**I parse JSON myself instead of using `bind_tools`.** The tool descriptions live in the prompt and the LLM answers with JSON that I parse. This makes every step easy to read in LangSmith, lets me add my own fields like a `reason` and control signals like `DONE`, and means malformed JSON gets handled instead of crashing the run. Moving to native tool calling later would be straightforward.
-
-**The planner only picks the next step.** There's no big upfront plan. Real environments change under you, and a plan made before the first action goes stale fast. Deciding one step at a time, based on what just happened, is what makes this an agent rather than a script.
-
-**Verification is deterministic.** After a write, the verifier reads the record back and compares fields with `==`. If the amount should be 5000, it checks for 5000. I didn't want an LLM deciding whether something "looks right."
-
-**Recovery checks memory before the LLM.** When something fails, the agent first looks in ChromaDB for a strategy that worked on a similar failure. That makes repeat problems faster and cheaper over time.
-
-**The world model is typed.** Entities are Pydantic models with a `to_prompt_text()` method for feeding the LLM, plus typed helpers like `find_vendor_by_name`. It's more code than a dict, but it catches mistakes early.
-
-**Checkpointing came first.** I added the SQLite checkpointer before I needed it for human-in-the-loop, so pausing and resuming worked without a refactor, and every run can be replayed.
-
-**Human decisions are final.** If the user rejects an action or cancels, the node sets `status=failed` and `next_action=DONE`, and the graph goes straight to the summarizer. The planner never sees it, so it can't mistake a "no" for a suggestion.
-
-**A guard layer catches loops.** `guard.py` tracks failed action signatures and questions already asked. The executor and `ask_user` check it before acting, so the agent can't get stuck repeating itself no matter what the LLM proposes.
-
-## Failure handling
-
-Failures get sorted into one of these categories:
+## Project structure
 
 ```
-selector_not_found   api_500              timeout
-missing_field        duplicate_record     permission_denied
-ambiguous_data       file_not_found       validation_error
-redundant_action     unknown
+ai-worker/
+├── agent/
+│   ├── nodes/        # graph nodes
+│   ├── tools/        # file, browser, API, memory tools
+│   ├── memory/       # world model, recovery memory, evidence
+│   ├── policies/     # risk assessor, loop guard
+│   ├── graph.py      # LangGraph definition
+│   ├── state.py
+│   ├── report.py     # FinalReport schema
+│   └── run.py        # CLI entry point
+├── mock_env/
+│   ├── api/          # FastAPI + SQLAlchemy backend
+│   ├── web/          # HTML pages for browser tasks
+│   ├── files/        # sample invoices, POs, quotes
+│   └── chaos.py      # failure injection for testing
+├── reports/
+├── screenshots/
+└── workflow.png
 ```
 
-Each one gets a canonical signature, like `file_not_found::read_file::invoices/ghost.txt`. When a recovery works, it's saved to memory and later retrieved with a similarity search filtered by category.
+## Design choices
 
-## Human in the loop
-
-Both flows use LangGraph's `interrupt()`, and the checkpointer holds the state while the graph waits.
-
-- **Approval:** a rule-based risk assessor scores each action from 0 to 1. Anything above 0.7 pauses the run and shows you the action, the score and the evidence. You approve or reject.
-- **Clarification:** when the planner can't proceed because the task is ambiguous, it emits `ASK_USER` and the graph pauses. Your answer is saved as a fact in the world model.
+- **Manual tool calling instead of `bind_tools`.** Tools are described in the prompt and the LLM returns JSON that we parse. Every prompt and response is visible in LangSmith, we can add control signals like `DONE` and `ASK_USER`, and malformed JSON becomes a normal observation instead of a crash.
+- **One step at a time.** The planner only decides the next action. Environments change, and a plan made upfront goes stale.
+- **Deterministic verification.** Correctness of a write is checked in code, not by asking an LLM if it looks right.
+- **Memory before LLM for recovery.** Past fixes are looked up first, filtered by failure category so file fixes don't leak into API failures.
+- **Loop guards.** Identical failed actions and repeated questions are hashed and blocked, no matter what the LLM proposes.
+- **Human decisions are final.** If a user rejects or cancels, the graph goes straight to the summarizer. The planner never gets to reinterpret it.
+- **Chaos where failures happen.** API errors are injected server-side, selector and file faults client-side, so tests hit realistic failure points.
+- **Checkpointing from the start.** Every run is replayable by `thread_id`, and pausing for a human needed no refactor.
 
 ## Known limitations
 
-- Recovery memory can store weak strategies. The category filter and the verifier catch the worst ones, but cleanup is manual for now.
-- There's no streaming UI. The CLI waits for the whole run to finish.
-- It's single-user and handles one-shot tasks only.
-- The document extractor truncates at 4000 characters.
-- The mock API has no auth.
-- The SQLite checkpointer doesn't handle concurrent writers well.
+- One task per process. No queues, background jobs, or concurrency, and SQLite plus a shared Playwright browser make parallel runs unsafe.
+- Recovery memory and the world model aren't scoped per user.
+- One LLM call per step, so cost grows with task length. There's no token or cost tracking.
+- The extractor truncates documents at 4,000 characters and doesn't validate its output.
+- Recovery strategies are never demoted, even if they stop working.
+- Only whitelisted write tools get verified, and browser submit checks are heuristic (looks for "SUCCESS" or "ERROR" on the page).
+- Adding a tool means editing both `TOOLS` and `TOOL_DESCRIPTIONS`.
+- No timeout on human-approval pauses, no checkpoint pruning, and changing `AgentState` invalidates old checkpoints.
+- No automated evaluation yet. Reliability is shown through manual scenarios, not metrics.
 
-## Tech stack
+## What's next
 
-| Layer | Choice |
-|---|---|
-| LLM | ChatGroq (`llama-3.3-70b-versatile`) |
-| Agent framework | LangGraph |
-| Tracing | LangSmith |
-| Browser | Playwright |
-| API | FastAPI + SQLAlchemy + SQLite |
-| Vector store | ChromaDB |
-| Validation | Pydantic v2 |
+1. **Evaluation harness.** Run 15–50 chaos scenarios automatically and report success, recovery, and verification rates plus cost and latency. This matters most.
+2. **Streamlit UI** with live step streaming and an in-browser approval form.
+3. **Recovery scoring.** Track success rate per strategy and drop the weak ones.
+4. **More task types**, like expense reports and research-and-compile, to show the loop generalizes.
+5. **Plan caching** across runs to cut LLM cost.
+6. **Hardening:** auth, rate limits, Postgres checkpointer, per-user memory.
 
-## What I'd do next
+## Stack
 
-- Try other kinds of tasks, like expense reports and research-and-compile jobs, on the same core loop.
-- Build a Streamlit UI with live step streaming and in-browser approvals.
-- Write an evaluation harness with 15 to 50 chaos scenarios, tracking success rate, recovery rate and cost.
-- Split the work across specialist sub-agents with the planner as dispatcher.
-- Harden it for production: auth, rate limiting, structured logging, and a policy engine like OPA.
+LangGraph and LangChain for the agent, Groq (`openai/gpt-oss-20b`) for the LLM, LangSmith for tracing, Playwright for the browser, FastAPI + SQLAlchemy + SQLite for the mock company, ChromaDB (all-MiniLM-L6-v2 embeddings) for recovery memory, httpx for API calls, and Pydantic v2 for schemas.
 
-## Assumptions
+## Submission
 
-- The mock environment runs on `localhost:8000`.
-- Whoever runs it has their own Groq API key.
-- All data is local and simulated. No real credentials are involved.
-- Chromium has been installed with `playwright install chromium`.
-
-## Links
 
 - Demo video: (link)
 - LangSmith Trace Example: [View Trace](https://smith.langchain.com/public/03218293-ebab-4026-86f5-7f51b43aa3a3/r/01a12128-c839-7d53-8bb7-8d2b159c05df?start_time=2026-10-09T14%3A54%3A43.257431Z)
